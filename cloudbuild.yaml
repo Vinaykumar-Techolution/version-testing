@@ -1,45 +1,131 @@
 steps:
-  # Step 1: Build Docker image for app
-  - name: gcr.io/cloud-builders/docker
+  # Step 1: Fetch the current version from the GCS bucket
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'Fetch Version'
+    entrypoint: 'bash'
     args:
-      - build
-      - '-t'
-      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
-      - '-f'
-      - app/Dockerfile
-      - app
-
-  # Step 2: Push Docker image to Artifact Registry
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - push
-      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
-
-  # Step 3: Deploy code-backend to GKE
-  - name: gcr.io/cloud-builders/gke-deploy
-    args:
-      - run
-      - '-f'
-      - deployment.yaml
-      - '-i'
-      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
-      - '-l'
-      - us-central1
       - '-c'
-      - agentspace-cluster
-      - '-t'
-      - 15m
+      - |
+        # Copy the version file from your GCS bucket to the build's local workspace.
+        # This command will fail the build if the file doesn't exist.
+        gsutil cp gs://version-tracking-bucket/version.txt ./version.txt
+        echo "Fetched version $$(cat ./version.txt)"
 
-  # Step 4: Wait for rollout of code-backend deployment
-  - name: gcr.io/cloud-builders/kubectl
-    env:
-      - CLOUDSDK_COMPUTE_REGION=us-central1
-      - CLOUDSDK_CONTAINER_CLUSTER=agentspace-cluster
+  # Step 2: Get the latest commit message
+  # We need the full git history to read the commit message.
+  - name: 'gcr.io/cloud-builders/git'
+    id: 'Fetch Git History'
+    args: ['fetch', '--unshallow']
+    
+  - name: 'gcr.io/cloud-builders/git'
+    id: 'Get Commit Message'
+    entrypoint: 'bash'
     args:
-      - rollout
-      - status
-      - deployment/app
+      - '-c'
+      - |
+        # Get the full message of the last commit.
+        git log -1 --pretty=%B > ./commit_message.txt
+        echo "Commit message:"
+        cat ./commit_message.txt
+
+  # Step 3: Bump version based on commit message (Semantic Versioning)
+  - name: 'bash'
+    id: 'Bump Version'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Read the current version and commit message from files.
+        CURRENT_VERSION=$$(cat ./version.txt)
+        COMMIT_MSG=$$(cat ./commit_message.txt)
+
+        # Split the version into major, minor, and patch components.
+        MAJOR_VERSION=$$(echo $$CURRENT_VERSION | cut -d. -f1)
+        MINOR_VERSION=$$(echo $$CURRENT_VERSION | cut -d. -f2)
+        PATCH_VERSION=$$(echo $$CURRENT_VERSION | cut -d. -f3)
+
+        # Determine version bump based on Conventional Commits standard.
+        if echo "$$COMMIT_MSG" | grep -q "BREAKING CHANGE:"; then
+          echo "Found BREAKING CHANGE. Bumping major version."
+          MAJOR_VERSION=$$((MAJOR_VERSION + 1))
+          MINOR_VERSION=0
+          PATCH_VERSION=0
+        elif echo "$$COMMIT_MSG" | grep -qE '^feat:'; then
+          echo "Found 'feat'. Bumping minor version."
+          MINOR_VERSION=$$((MINOR_VERSION + 1))
+          PATCH_VERSION=0
+        elif echo "$$COMMIT_MSG" | grep -qE '^fix:'; then
+          echo "Found 'fix'. Bumping patch version."
+          PATCH_VERSION=$$((PATCH_VERSION + 1))
+        else
+          echo "No conventional commit keyword found. Defaulting to patch bump."
+          PATCH_VERSION=$$((PATCH_VERSION + 1))
+        fi
+        
+        # Construct the new version string.
+        NEW_VERSION="$$MAJOR_VERSION.$$MINOR_VERSION.$$PATCH_VERSION"
+        
+        echo "Bumping version from $$CURRENT_VERSION to $$NEW_VERSION"
+        
+        # Save the new version to a file for subsequent steps to use.
+        echo $$NEW_VERSION > ./new_version.txt
+
+  # Step 4: Build Docker image for app with the new version tag
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Build'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker build -t "us-central1-docker.pkg.dev/techolution-agentspace/version/app:$$(cat ./new_version.txt)" -f app/Dockerfile app
+
+  # Step 5: Push Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Push'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker push "us-central1-docker.pkg.dev/techolution-agentspace/version/app:$$(cat ./new_version.txt)"
+
+  # Step 6: Deploy to GKE using the new image version
+  - name: 'gcr.io/cloud-builders/gke-deploy'
+    id: 'Deploy'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # The gke-deploy executable is in the PATH, so we call it directly.
+        gke-deploy run \
+          --filename=deployment.yaml \
+          --image="us-central1-docker.pkg.dev/techolution-agentspace/version/app:$$(cat ./new_version.txt)" \
+          --location=us-central1 \
+          --cluster=agentspace-cluster \
+          --timeout=15m
+
+  # Step 7: Wait for the deployment rollout to be successful
+  - name: 'gcr.io/cloud-builders/kubectl'
+    id: 'Rollout Status'
+    env:
+      - 'CLOUDSDK_COMPUTE_REGION=us-central1'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=agentspace-cluster'
+    args:
+      - 'rollout'
+      - 'status'
+      - 'deployment/app'
       - '--watch=true'
+
+  # Step 8: If all previous steps succeeded, update the version file in GCS
+  # This step only runs if the deployment was successful.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'Update Master Version'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Copy the new version file back to the GCS bucket, overwriting the old one.
+        gsutil cp ./new_version.txt gs://version-tracking-bucket/version.txt
+        echo "Successfully updated master version in GCS to $$(cat ./new_version.txt)"
 
 timeout: 900s
 
