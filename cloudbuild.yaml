@@ -1,0 +1,47 @@
+steps:
+  # Step 1: Build Docker image for app
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - '-t'
+      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
+      - '-f'
+      - Dockerfile
+      - 'app'
+
+  # Step 2: Push Docker image to Artifact Registry
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
+
+  # Step 3: Deploy code-backend to GKE
+  - name: gcr.io/cloud-builders/gke-deploy
+    args:
+      - run
+      - '-f'
+      - deployment.yaml
+      - '-i'
+      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
+      - '-l'
+      - us-central1
+      - '-c'
+      - agentspace-cluster
+      - '-t'
+      - 15m
+
+  # Step 4: Wait for rollout of code-backend deployment
+  - name: gcr.io/cloud-builders/kubectl
+    env:
+      - CLOUDSDK_COMPUTE_REGION=us-central1
+      - CLOUDSDK_CONTAINER_CLUSTER=agentspace-cluster
+    args:
+      - rollout
+      - status
+      - deployment/app
+      - '--watch=true'
+
+timeout: 900s
+
+options:
+  logging: CLOUD_LOGGING_ONLY
