@@ -1,28 +1,72 @@
 steps:
-  # Step 1: Build Docker image for app
+  # Step 1: Clone the repo and parse the latest commit message
+  - name: gcr.io/cloud-builders/git
+    id: Get Commit Type
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        COMMIT_MSG=$(git log -1 --pretty=%B)
+        echo "$COMMIT_MSG"
+        if [[ "$COMMIT_MSG" == *"BREAKING CHANGE:"* ]]; then
+          echo "MAJOR=true" >> /workspace/version_flags
+        elif [[ "$COMMIT_MSG" == feat:* ]]; then
+          echo "MINOR=true" >> /workspace/version_flags
+        else
+          echo "PATCH=true" >> /workspace/version_flags
+        fi
+
+  # Step 2: Download version file from GCS and bump version
+  - name: gcr.io/cloud-builders/gsutil
+    id: Bump Version
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gsutil cp gs://<your-bucket-name>/version.txt version.txt
+        source version_flags
+        VERSION=$(cat version.txt)
+        IFS='.' read -r MAJOR_VER MINOR_VER PATCH_VER <<< "$VERSION"
+        if [[ "$MAJOR" == "true" ]]; then
+          ((MAJOR_VER++)); MINOR_VER=0; PATCH_VER=0
+        elif [[ "$MINOR" == "true" ]]; then
+          ((MINOR_VER++)); PATCH_VER=0
+        else
+          ((PATCH_VER++))
+        fi
+        NEW_VERSION="$MAJOR_VER.$MINOR_VER.$PATCH_VER"
+        echo "$NEW_VERSION" > version.txt
+        gsutil cp version.txt gs://<your-bucket-name>/version.txt
+        echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
+        echo "VERSION=$NEW_VERSION" >> /workspace/.env
+
+  # Step 3: Build Docker image using the new version
   - name: gcr.io/cloud-builders/docker
+    id: Build Image
     args:
       - build
       - '-t'
-      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
+      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$(cat /workspace/version.txt)'
       - '-f'
       - app/Dockerfile
       - app
 
-  # Step 2: Push Docker image to Artifact Registry
+  # Step 4: Push Docker image to Artifact Registry
   - name: gcr.io/cloud-builders/docker
+    id: Push Image
     args:
       - push
-      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
+      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$(cat /workspace/version.txt)'
 
-  # Step 3: Deploy code-backend to GKE
+  # Step 5: Deploy to GKE
   - name: gcr.io/cloud-builders/gke-deploy
+    id: Deploy to GKE
     args:
       - run
       - '-f'
       - deployment.yaml
       - '-i'
-      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$SHORT_SHA'
+      - 'us-central1-docker.pkg.dev/techolution-agentspace/version/app:$(cat /workspace/version.txt)'
       - '-l'
       - us-central1
       - '-c'
@@ -30,8 +74,9 @@ steps:
       - '-t'
       - 15m
 
-  # Step 4: Wait for rollout of code-backend deployment
+  # Step 6: Wait for rollout
   - name: gcr.io/cloud-builders/kubectl
+    id: Wait Rollout
     env:
       - CLOUDSDK_COMPUTE_REGION=us-central1
       - CLOUDSDK_CONTAINER_CLUSTER=agentspace-cluster
@@ -45,3 +90,4 @@ timeout: 900s
 
 options:
   logging: CLOUD_LOGGING_ONLY
+
