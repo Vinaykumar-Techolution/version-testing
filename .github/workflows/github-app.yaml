@@ -108,14 +108,17 @@ jobs:
           cluster_name: 'agentspace-cluster'
           location: 'us-central1'
 
-      # 10. Deploy to GKE using Kustomize
+      # 10. Deploy to GKE using kubectl
       - name: 'Deploy to GKE'
         run: |
-          # Use kustomize to set the new image tag. This is safer than sed.
-          kustomize edit set image us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ steps.bump_version.outputs.new_version }}
+          # First, apply the base configuration from your deployment.yaml.
+          # This ensures resources like the Service are created or updated.
+          kubectl apply -f deployment.yaml
           
-          # Apply the updated configuration to the cluster.
-          kustomize build . | kubectl apply -f -
+          # Now, update the image of the 'app' deployment to the new version.
+          # This triggers a new rollout with the correct image.
+          # Note: The container name in your deployment.yaml must be 'app'.
+          kubectl set image deployment/app app=us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ steps.bump_version.outputs.new_version }}
 
       # 11. Wait for deployment rollout to complete
       - name: 'Wait for Rollout'
