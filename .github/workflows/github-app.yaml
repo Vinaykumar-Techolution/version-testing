@@ -26,20 +26,11 @@ jobs:
           fetch-depth: 0
 
       # 2. Authenticate to Google Cloud using Workload Identity Federation
-      # This is the recommended, most secure method.
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v2'
         with:
-          # IMPORTANT: Find this value in your GCP project.
-          # Go to IAM & Admin > Workload Identity Federation.
-          # Click on your pool (e.g., 'github-pool'), then click on your provider.
-          # The full provider name will be listed at the top. Copy it exactly.
           workload_identity_provider: 'projects/1023299171373/locations/global/workloadIdentityPools/github/providers/github-provider'
-          
-          # IMPORTANT: Find this value in your GCP project.
-          # Go to IAM & Admin > Service Accounts.
-          # Copy the full email address of the service account you created.
           service_account: 'cloudbuild-sa@techolution-agentspace.iam.gserviceaccount.com'
 
       # 3. Set up gcloud SDK
@@ -111,13 +102,7 @@ jobs:
       # 10. Deploy to GKE using kubectl
       - name: 'Deploy to GKE'
         run: |
-          # First, apply the base configuration from your deployment.yaml.
-          # This ensures resources like the Service are created or updated.
           kubectl apply -f deployment.yaml
-          
-          # Now, update the image of the 'app' deployment to the new version.
-          # This triggers a new rollout with the correct image.
-          # Note: The container name in your deployment.yaml must be 'app'.
           kubectl set image deployment/app app=us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ steps.bump_version.outputs.new_version }}
 
       # 11. Wait for deployment rollout to complete
