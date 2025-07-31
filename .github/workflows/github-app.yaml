@@ -31,7 +31,15 @@ jobs:
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: 'projects/1023299171373/locations/global/workloadIdentityPools/github'
+          # IMPORTANT: Find this value in your GCP project.
+          # Go to IAM & Admin > Workload Identity Federation.
+          # Click on your pool (e.g., 'github-pool'), then click on your provider.
+          # The full provider name will be listed at the top. Copy it exactly.
+          workload_identity_provider: 'projects/1023299171373/locations/global/workloadIdentityPools/github/providers/github-provider'
+          
+          # IMPORTANT: Find this value in your GCP project.
+          # Go to IAM & Admin > Service Accounts.
+          # Copy the full email address of the service account you created.
           service_account: 'cloudbuild-sa@techolution-agentspace.iam.gserviceaccount.com'
 
       # 3. Set up gcloud SDK
@@ -117,4 +125,3 @@ jobs:
       - name: 'Update Master Version'
         if: success()
         run: gsutil cp ./new_version.txt gs://version-tracking-bucket/version.txt
-
