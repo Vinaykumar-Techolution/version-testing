@@ -95,7 +95,6 @@ steps:
     args:
       - '-c'
       - |
-        # The gke-deploy executable is in the PATH, so we call it directly.
         gke-deploy run \
           --filename=deployment.yaml \
           --image="us-central1-docker.pkg.dev/techolution-agentspace/version/app:$$(cat ./new_version.txt)" \
