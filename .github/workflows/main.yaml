@@ -1,4 +1,4 @@
-# .github/workflows/main.yml
+# .github/workflows/main.yaml
 
 name: Build, Version, and Deploy to GKE
 
@@ -11,7 +11,7 @@ jobs:
   # Job 1: Calculate the next version number (read-only)
   calculate_version:
     name: Calculate Next Version
-    uses: ./.github/workflows/reusable-calculate-version.yml
+    uses: ./.github/workflows/reusable-calculate-version.yaml
 
   # Job 2: Build and deploy the application (the main workload)
   build_and_deploy:
@@ -70,7 +70,7 @@ jobs:
     needs: [calculate_version, build_and_deploy]
     if: success()
     
-    uses: ./.github/workflows/reusable-create-release.yml
+    uses: ./.github/workflows/reusable-create-release.yaml
     with:
       # Prepend 'v' to the version number, which is a common convention for tags.
       tag_name: v${{ needs.calculate_version.outputs.new_version }}
