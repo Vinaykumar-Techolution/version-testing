@@ -1,0 +1,41 @@
+# .github/workflows/reusable-calculate-version.yml
+
+name: Reusable - Calculate Next Version
+
+# This workflow is designed to be called by other workflows.
+on:
+  workflow_call:
+    # This output will be available to the calling workflow.
+    outputs:
+      new_version:
+        description: "The calculated semantic version number (e.g., 1.2.3)."
+        value: ${{ jobs.calculate.outputs.new_version }}
+
+jobs:
+  calculate:
+    name: Calculate Version
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.version }}
+
+    steps:
+      # 1. Checkout the repository to access commit history
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch all history for all branches and tags
+          fetch-depth: 0
+
+      # 2. Calculate the next semantic version
+      # This action automatically finds the latest Git tag, reads commit messages
+      # since that tag, and determines the next version based on your rules.
+      - name: Calculate Next Version
+        id: version
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          # Keyword in commit message for a MAJOR bump
+          major_pattern: "BREAKING CHANGE:"
+          # Keyword in commit message for a MINOR bump
+          minor_pattern: "feat:"
+          # All other commits (including 'fix:') will result in a PATCH bump by default.
+          # The action also handles the initial version (0.1.0) if no tags exist.

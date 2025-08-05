@@ -1,115 +1,115 @@
-# .github/workflows/main.yml
+# # .github/workflows/main.yml
 
-name: Build, Version, and Deploy to GKE
+# name: Build, Version, and Deploy to GKE
 
-on:
-  push:
-    branches:
-      - main  # Or your primary branch
+# on:
+#   push:
+#     branches:
+#       - main  # Or your primary branch
 
-jobs:
-  build-and-deploy:
-    name: Build and Deploy
-    runs-on: ubuntu-latest
+# jobs:
+#   build-and-deploy:
+#     name: Build and Deploy
+#     runs-on: ubuntu-latest
     
-    # Add permissions for authenticating to Google Cloud and writing to GCS
-    permissions:
-      contents: 'read'
-      id-token: 'write'
+#     # Add permissions for authenticating to Google Cloud and writing to GCS
+#     permissions:
+#       contents: 'read'
+#       id-token: 'write'
 
-    steps:
-      # 1. Checkout repository code
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        # Fetch all history for all branches and tags so we can read the commit message
-        with:
-          fetch-depth: 0
+#     steps:
+#       # 1. Checkout repository code
+#       - name: Checkout Repository
+#         uses: actions/checkout@v4
+#         # Fetch all history for all branches and tags so we can read the commit message
+#         with:
+#           fetch-depth: 0
 
-      # 2. Authenticate to Google Cloud using Workload Identity Federation
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v2'
-        with:
-          workload_identity_provider: 'projects/1023299171373/locations/global/workloadIdentityPools/github/providers/github-provider'
-          service_account: 'cloudbuild-sa@techolution-agentspace.iam.gserviceaccount.com'
+#       # 2. Authenticate to Google Cloud using Workload Identity Federation
+#       - id: 'auth'
+#         name: 'Authenticate to Google Cloud'
+#         uses: 'google-github-actions/auth@v2'
+#         with:
+#           workload_identity_provider: 'projects/1023299171373/locations/global/workloadIdentityPools/github/providers/github-provider'
+#           service_account: 'cloudbuild-sa@techolution-agentspace.iam.gserviceaccount.com'
 
-      # 3. Set up gcloud SDK
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v2'
+#       # 3. Set up gcloud SDK
+#       - name: 'Set up Cloud SDK'
+#         uses: 'google-github-actions/setup-gcloud@v2'
 
-      # 4. Fetch the current version from GCS
-      - name: 'Fetch Version'
-        run: gsutil cp gs://version-tracking-bucket/version.txt ./version.txt
+#       # 4. Fetch the current version from GCS
+#       - name: 'Fetch Version'
+#         run: gsutil cp gs://version-tracking-bucket/version.txt ./version.txt
 
-      # 5. Get the latest commit message
-      - name: 'Get Commit Message'
-        id: 'commit'
-        run: echo "message=$(git log -1 --pretty=%B)" >> $GITHUB_OUTPUT
+#       # 5. Get the latest commit message
+#       - name: 'Get Commit Message'
+#         id: 'commit'
+#         run: echo "message=$(git log -1 --pretty=%B)" >> $GITHUB_OUTPUT
         
-      # 6. Bump version based on commit message
-      - name: 'Bump Version'
-        id: 'bump_version'
-        run: |
-          CURRENT_VERSION=$(cat ./version.txt)
-          COMMIT_MSG="${{ steps.commit.outputs.message }}"
+#       # 6. Bump version based on commit message
+#       - name: 'Bump Version'
+#         id: 'bump_version'
+#         run: |
+#           CURRENT_VERSION=$(cat ./version.txt)
+#           COMMIT_MSG="${{ steps.commit.outputs.message }}"
           
-          MAJOR_VERSION=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR_VERSION=$(echo $CURRENT_VERSION | cut -d. -f2)
-          PATCH_VERSION=$(echo $CURRENT_VERSION | cut -d. -f3)
+#           MAJOR_VERSION=$(echo $CURRENT_VERSION | cut -d. -f1)
+#           MINOR_VERSION=$(echo $CURRENT_VERSION | cut -d. -f2)
+#           PATCH_VERSION=$(echo $CURRENT_VERSION | cut -d. -f3)
 
-          if echo "$COMMIT_MSG" | grep -q "BREAKING CHANGE:"; then
-            echo "Found BREAKING CHANGE. Bumping major version."
-            MAJOR_VERSION=$((MAJOR_VERSION + 1))
-            MINOR_VERSION=0
-            PATCH_VERSION=0
-          elif echo "$COMMIT_MSG" | grep -qE '^feat:'; then
-            echo "Found 'feat'. Bumping minor version."
-            MINOR_VERSION=$((MINOR_VERSION + 1))
-            PATCH_VERSION=0
-          elif echo "$COMMIT_MSG" | grep -qE '^fix:'; then
-            echo "Found 'fix'. Bumping patch version."
-            PATCH_VERSION=$((PATCH_VERSION + 1))
-          else
-            echo "No conventional commit keyword found. Defaulting to patch bump."
-            PATCH_VERSION=$((PATCH_VERSION + 1))
-          fi
+#           if echo "$COMMIT_MSG" | grep -q "BREAKING CHANGE:"; then
+#             echo "Found BREAKING CHANGE. Bumping major version."
+#             MAJOR_VERSION=$((MAJOR_VERSION + 1))
+#             MINOR_VERSION=0
+#             PATCH_VERSION=0
+#           elif echo "$COMMIT_MSG" | grep -qE '^feat:'; then
+#             echo "Found 'feat'. Bumping minor version."
+#             MINOR_VERSION=$((MINOR_VERSION + 1))
+#             PATCH_VERSION=0
+#           elif echo "$COMMIT_MSG" | grep -qE '^fix:'; then
+#             echo "Found 'fix'. Bumping patch version."
+#             PATCH_VERSION=$((PATCH_VERSION + 1))
+#           else
+#             echo "No conventional commit keyword found. Defaulting to patch bump."
+#             PATCH_VERSION=$((PATCH_VERSION + 1))
+#           fi
           
-          NEW_VERSION="$MAJOR_VERSION.$MINOR_VERSION.$PATCH_VERSION"
-          echo "Bumping version from $CURRENT_VERSION to $NEW_VERSION"
+#           NEW_VERSION="$MAJOR_VERSION.$MINOR_VERSION.$PATCH_VERSION"
+#           echo "Bumping version from $CURRENT_VERSION to $NEW_VERSION"
           
-          # Save new version to a file and set as an output for other steps
-          echo $NEW_VERSION > ./new_version.txt
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+#           # Save new version to a file and set as an output for other steps
+#           echo $NEW_VERSION > ./new_version.txt
+#           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      # 7. Configure Docker to use gcloud credentials
-      - name: 'Configure Docker'
-        run: gcloud auth configure-docker us-central1-docker.pkg.dev
+#       # 7. Configure Docker to use gcloud credentials
+#       - name: 'Configure Docker'
+#         run: gcloud auth configure-docker us-central1-docker.pkg.dev
 
-      # 8. Build and Push Docker Image
-      - name: 'Build and Push Docker Image'
-        run: |
-          IMAGE_URL="us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ steps.bump_version.outputs.new_version }}"
-          docker build -t $IMAGE_URL -f app/Dockerfile app
-          docker push $IMAGE_URL
+#       # 8. Build and Push Docker Image
+#       - name: 'Build and Push Docker Image'
+#         run: |
+#           IMAGE_URL="us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ steps.bump_version.outputs.new_version }}"
+#           docker build -t $IMAGE_URL -f app/Dockerfile app
+#           docker push $IMAGE_URL
 
-      # 9. Get GKE Credentials
-      - name: 'Get GKE Credentials'
-        uses: 'google-github-actions/get-gke-credentials@v2'
-        with:
-          cluster_name: 'agentspace-cluster'
-          location: 'us-central1'
+#       # 9. Get GKE Credentials
+#       - name: 'Get GKE Credentials'
+#         uses: 'google-github-actions/get-gke-credentials@v2'
+#         with:
+#           cluster_name: 'agentspace-cluster'
+#           location: 'us-central1'
 
-      # 10. Deploy to GKE using kubectl
-      - name: 'Deploy to GKE'
-        run: |
-          kubectl apply -f deployment.yaml
-          kubectl set image deployment/app app=us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ steps.bump_version.outputs.new_version }}
+#       # 10. Deploy to GKE using kubectl
+#       - name: 'Deploy to GKE'
+#         run: |
+#           kubectl apply -f deployment.yaml
+#           kubectl set image deployment/app app=us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ steps.bump_version.outputs.new_version }}
 
-      # 11. Wait for deployment rollout to complete
-      - name: 'Wait for Rollout'
-        run: kubectl rollout status deployment/app --timeout=15m
+#       # 11. Wait for deployment rollout to complete
+#       - name: 'Wait for Rollout'
+#         run: kubectl rollout status deployment/app --timeout=15m
 
-      # 12. Update the master version file in GCS upon success
-      - name: 'Update Master Version'
-        if: success()
-        run: gsutil cp ./new_version.txt gs://version-tracking-bucket/version.txt
+#       # 12. Update the master version file in GCS upon success
+#       - name: 'Update Master Version'
+#         if: success()
+#         run: gsutil cp ./new_version.txt gs://version-tracking-bucket/version.txt

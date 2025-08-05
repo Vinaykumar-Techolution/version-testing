@@ -1,0 +1,76 @@
+# .github/workflows/main.yml
+
+name: Build, Version, and Deploy to GKE
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Job 1: Calculate the next version number (read-only)
+  calculate_version:
+    name: Calculate Next Version
+    uses: ./.github/workflows/reusable-calculate-version.yml
+
+  # Job 2: Build and deploy the application (the main workload)
+  build_and_deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    # This job depends on the successful completion of the version calculation.
+    needs: calculate_version
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/1023299171373/locations/global/workloadIdentityPools/github/providers/github-provider'
+          service_account: 'cloudbuild-sa@techolution-agentspace.iam.gserviceaccount.com'
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Configure Docker'
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev
+
+      - name: 'Build and Push Docker Image'
+        run: |
+          # Use the version number calculated in the first job
+          IMAGE_URL="us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ needs.calculate_version.outputs.new_version }}"
+          docker build -t $IMAGE_URL -f app/Dockerfile app
+          docker push $IMAGE_URL
+
+      - name: 'Get GKE Credentials'
+        uses: 'google-github-actions/get-gke-credentials@v2'
+        with:
+          cluster_name: 'agentspace-cluster'
+          location: 'us-central1'
+
+      - name: 'Deploy to GKE'
+        run: |
+          kubectl apply -f deployment.yaml
+          # Use the calculated version to update the image in the running deployment
+          kubectl set image deployment/app app=us-central1-docker.pkg.dev/techolution-agentspace/version/app:${{ needs.calculate_version.outputs.new_version }}
+
+      - name: 'Wait for Rollout'
+        run: kubectl rollout status deployment/app --timeout=15m
+
+  # Job 3: Create the Git tag (write operation)
+  create_release:
+    name: Create Release Tag
+    # This job only runs if the build_and_deploy job was successful.
+    # It also needs the version number from the first job.
+    needs: [calculate_version, build_and_deploy]
+    if: success()
+    
+    uses: ./.github/workflows/reusable-create-release.yml
+    with:
+      # Prepend 'v' to the version number, which is a common convention for tags.
+      tag_name: v${{ needs.calculate_version.outputs.new_version }}
