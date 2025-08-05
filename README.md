@@ -29,3 +29,4 @@ Example: feat: add OTP login support
 Patch Bump (e.g., 1.0.0 → 1.0.1): Triggered if the commit message starts with fix:, or if no other keyword is found (default).
 
 Example: fix: handle null in login API
+########
