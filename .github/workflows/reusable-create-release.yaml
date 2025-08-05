@@ -1,5 +1,3 @@
-# .github/workflows/reusable-create-release.yml
-
 name: Reusable - Create Release
 
 on:

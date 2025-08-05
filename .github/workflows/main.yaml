@@ -1,5 +1,3 @@
-# .github/workflows/main.yaml
-
 name: Build, Version, and Deploy to GKE
 
 on:

@@ -1,5 +1,3 @@
-# .github/workflows/reusable-calculate-version.yml
-
 name: Reusable - Calculate Next Version
 
 # This workflow is designed to be called by other workflows.
