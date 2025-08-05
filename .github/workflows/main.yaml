@@ -65,6 +65,9 @@ jobs:
   # Job 3: Create the Git tag (write operation)
   create_release:
     name: Create Release Tag
+    # This job needs write permissions to create a Git tag and release.
+    permissions:
+      contents: write
     # This job only runs if the build_and_deploy job was successful.
     # It also needs the version number from the first job.
     needs: [calculate_version, build_and_deploy]
